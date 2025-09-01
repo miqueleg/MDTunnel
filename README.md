@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # MDTunnel
+=======
+## MDTunnel: Sphere-by-sphere ligand minimization in tunnels
+>>>>>>> 1c79bc7824cce3b9c1890b6b87ed6cc4a1e10524
 
 Sphere‑by‑sphere ligand minimization along protein tunnels using OpenMM.
 
