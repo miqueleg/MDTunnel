@@ -1,4 +1,4 @@
-Caver-MM: Sphere-by-sphere ligand minimization in tunnels
+## MDTunnel: Sphere-by-sphere ligand minimization in tunnels
 
 Overview
 
