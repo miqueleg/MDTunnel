@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# VSCode/IDE
+.vscode/
+.idea/
+
+# Build/cache
+dist/
+build/
+*.egg-info/
+
+# Runs and data outputs
+run_*/
+runs/
+runs_pocket/
+
+# AmberTools generated
+amber_prep/
+
+# Figures
+*.png
+
