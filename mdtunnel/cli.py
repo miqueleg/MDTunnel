@@ -165,7 +165,7 @@ def _run_bidirectional_and_merge(args, orig_spheres):
 
 
 def main():
-    p = argparse.ArgumentParser(description="Caver-MM: sphere-by-sphere ligand minimization in tunnels")
+    p = argparse.ArgumentParser(description="MDTunnel: sphere-by-sphere ligand minimization in tunnels")
     p.add_argument("--protein", required=True, help="Protein PDB path")
     p.add_argument("--ligand", required=True, help="Ligand file (PDB/SDF/MOL2)")
     p.add_argument("--spheres", required=True, help="CAVER spheres CSV or PDB (resname SPH)")

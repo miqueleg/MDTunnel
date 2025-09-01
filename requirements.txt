@@ -1,0 +1,6 @@
+numpy
+pandas
+openmm
+openmmforcefields
+openff-toolkit
+rdkit-pypi

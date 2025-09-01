@@ -1,75 +1,133 @@
-Caver-MM: Sphere-by-sphere ligand minimization in tunnels
+# MDTunnel
 
-Overview
+Sphere‑by‑sphere ligand minimization along protein tunnels using OpenMM.
 
-- Inputs: protein structure, ligand, tunnel spheres (from CAVER3).
-- Process: place ligand in first sphere (optionally docked pose), then for each sphere:
-  - Translate ligand COM to sphere center while preserving orientation from previous step.
-  - Apply a COM harmonic restraint to keep ligand near the sphere center (allows rotation).
-  - Keep protein atoms restrained (effectively rigid) during minimization.
-  - Minimize only the ligand degrees of freedom using OpenMM.
-  - Record potential energy and write the minimized pose.
-- Outputs: per-step PDB frames and an energy profile CSV.
+MDTunnel performs sphere‑by‑sphere ligand minimization along a protein tunnel path. Provide a protein, a ligand, and a sequence of tunnel spheres (e.g., from CAVER3), and it will generate minimized ligand poses and an energy profile. It can optionally dock the first pose with AutoDock Vina and supports an AmberTools‑based preparation path.
 
-Features
+## Key Features
 
-- Protein force fields: default Amber ff14SB (OpenMM XML).
-- Ligand parameterization: default GAFF2 + AM1-BCC charges via OpenFF/openmmforcefields.
-- Optional re-parameterization per step to emulate polarization effects.
-- Optional AMOEBA path (requires AMOEBA templates for the ligand or openmmforcefields support).
-- COM restraint implemented via CustomCentroidBondForce against a fixed ghost particle.
+- Protein force field: Amber ff14SB (OpenMM XML) by default.
+- Ligand parameterization: GAFF2 + AM1‑BCC via OpenFF + openmmforcefields.
+- Optional AMOEBA path for protein/ligand (requires suitable templates/support).
+- Optional re‑parameterization per step to emulate polarization effects.
+- Center‑of‑mass restraint to keep the ligand near each sphere center.
+- Bidirectional run and per‑sphere energy‑based merge.
 
-Status
+## Installation
 
-This is a working scaffold designed to run with OpenMM, OpenFF Toolkit, RDKit, and openmmforcefields installed in your environment. Network access is not needed at runtime, but you must pre-install dependencies.
+Requires Python 3.9+.
 
-Install (editable)
+Option A: editable install from this repo
 
-- Create a virtualenv and install dependencies (example):
+```
+python -m venv .venv && source .venv/bin/activate
+pip install -U pip
+pip install -r requirements.txt
+pip install -e .
+```
 
-  pip install openmm openmmforcefields openff-toolkit rdkit-pypi numpy pandas
+Option B: direct install (pyproject)
 
-- Use the CLI from the repo root:
+```
+pip install -U pip
+pip install .
+```
 
-  python -m cavermm.cli --help
+Core runtime dependencies:
 
-CLI usage
+- openmm, openmmforcefields, openff-toolkit, rdkit-pypi, numpy, pandas
 
-  python -m cavermm.cli \
-    --protein protein.pdb \
-    --ligand ligand.sdf \
-    --spheres tunnel.csv \
-    --out outdir \
-    --protein-ff amber14/protein.ff14SB.xml \
-    --ligand-param gaff-am1bcc \
-    --kcom 2000 \
-    --reparam-per-step
+Optional external tools:
 
-Dock first sphere with Vina
+- AutoDock Vina (`vina`) and Open Babel (`obabel`) for `--dock-first`
+- AmberTools (`antechamber`, `parmchk2`, `tleap`) for `--ambertools-prep`
 
-- Requires `vina` and `obabel` on PATH.
-- The first pose is obtained by docking within a box centered at the first sphere.
-- After docking, the ligand is minimized with the COM restraint at that sphere; subsequent spheres use the previous orientation and minimization only.
+## Quickstart
 
-Example:
+Basic minimization along spheres (GAFF2/AM1-BCC for ligand):
 
-  python -m cavermm.cli \
-    --protein protein.pdb \
-    --ligand ligand.sdf \
-    --spheres tunnel.csv \
-    --out outdir \
-    --dock-first \
-    --exhaustiveness 16 \
-    --num-modes 1 \
-    --box-size 24
+```
+python -m mdtunnel.cli \
+  --protein protein.pdb \
+  --ligand ligand.sdf \
+  --spheres tunnel.csv \
+  --out outdir
+```
 
-Spheres format
+Dock first sphere with Vina, then minimize:
 
-- CSV with columns: x,y,z,r (header optional), coordinates in Angstrom.
-- Or a PDB with spheres as HETATM records (resname SPH). x,y,z from coordinates; radius read from B-factor if available (defaults to 1.5 Å).
+```
+python -m mdtunnel.cli \
+  --protein protein.pdb \
+  --ligand ligand.sdf \
+  --spheres tunnel.csv \
+  --out outdir \
+  --dock-first \
+  --exhaustiveness 16 \
+  --num-modes 1 \
+  --box-size 24
+```
 
-Notes
+Bidirectional run with energy‑based merge:
 
-- Initial “docking”: If you already have a pose in the active site, pass it as the ligand. Otherwise, the tool places the ligand COM at the first sphere center and minimizes under the COM restraint. You may later integrate an external docking step before running this pipeline.
-- AMOEBA for ligands often requires template XML; this tool exposes a switch but expects you to provide valid ligand parameters if generic generation is not available in your environment.
-- Re-parameterization per step is supported for GAFF+AM1-BCC by recomputing charges at each iteration. This is optional and off by default.
+```
+python -m mdtunnel.cli \
+  --protein protein.pdb \
+  --ligand ligand.sdf \
+  --spheres tunnel.csv \
+  --out outdir \
+  --bidirectional-merge
+```
+
+Get CLI help:
+
+```
+python -m mdtunnel.cli --help
+```
+
+## Inputs
+
+- Protein: PDB file of the receptor.
+- Ligand: SDF/MOL2/PDB of the small molecule; if not protonated, the tool will add hydrogens by default.
+- Spheres: tunnel path as CSV or PDB.
+  - CSV: columns `x,y,z,r` (header optional), coordinates in Å.
+  - PDB: spheres as `HETATM` with `resname SPH`; radius read from B‑factor if present (defaults to 1.5 Å).
+
+## Outputs
+
+- `frames/step_XXXX.pdb`: ligand+protein frames per sphere.
+- `substrate_traj.pdb`: concatenated ligand models across steps (if merge mode, merged trajectory).
+- `energy_profile.csv`: per‑step energy in kJ/mol and kcal/mol; merged profile in bidirectional mode with ΔE relative to step 0.
+- `timings.json`: wall‑clock timings and number of spheres.
+- `docking/` and `amber_prep/`: created when using `--dock-first` and `--ambertools-prep`, respectively.
+
+## Typical Options
+
+- `--protein-ff`: OpenMM XML for protein (default `amber14/protein.ff14SB.xml`).
+- `--ligand-param`: `gaff-am1bcc` (default) | `amoeba` | `qmmm`.
+- `--kcom`: COM restraint k (kJ/mol/nm²), default 2000.
+- `--kpos-protein`: protein position restraint k (kJ/mol/nm²).
+- `--platform`: CUDA | OpenCL | CPU (delegated to OpenMM).
+- `--reparam-per-step`: rebuild ligand params each step (GAFF path).
+- `--dock-first`: run Vina docking at the first sphere.
+- `--ambertools-prep`: build with AmberTools (requires external binaries).
+
+## Notes
+
+- If you already have a reasonable starting pose, you can skip docking. By default, the ligand COM is translated to the first sphere and minimized under a COM restraint that allows rotation.
+- AMOEBA often requires specific ligand templates; enable only if your environment supports it.
+- Re‑parameterization per step is optional and can be expensive.
+
+## Development
+
+- CLI entry point: `mdtunnel.cli:main` (`python -m mdtunnel.cli`).
+- Core modules: `pipeline.py`, `system_builder.py`, `param.py`, `spheres.py`, `ligand_prep.py`.
+- Utility scripts in `tools/` help sweep parameters and refine outputs.
+
+## License
+
+Please add a LICENSE file to clarify reuse. If you prefer, we can include a standard license (e.g., MIT/BSD-3-Clause/Apache-2.0).
+
+## Citation
+
+If you use this tool in academic work, please cite this repository and the underlying tools (OpenMM, OpenFF Toolkit, openmmforcefields, RDKit, AutoDock Vina, AmberTools).

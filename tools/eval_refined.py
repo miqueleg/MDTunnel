@@ -7,7 +7,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from openmm.app import Simulation, PDBFile
 from openmm import Platform, unit, LocalEnergyMinimizer
-from cavermm.system_builder_amber import build_system_from_amber_with_restraints
+from mdtunnel.system_builder_amber import build_system_from_amber_with_restraints
 
 def load_xyz_ligand(pdb_path: str) -> unit.Quantity:
     # Return Nx3 Quantity in nm for LIG atoms

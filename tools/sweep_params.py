@@ -53,7 +53,7 @@ def main():
     for i, (kcom, ramp, targA, tol, iters) in enumerate(combos, start=1):
         outdir = os.path.join(out_root, f"sweep_{i:02d}_k{kcom}_r{ramp}_t{targA}_tol{tol}_it{iters}")
         cmd = [
-            "conda", "run", "-n", "OpenMM", "python", "-m", "cavermm.cli",
+            "conda", "run", "-n", "OpenMM", "python", "-m", "mdtunnel.cli",
             "--protein", PROTEIN,
             "--ligand", LIGAND,
             "--spheres", SPHERES,
@@ -109,4 +109,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

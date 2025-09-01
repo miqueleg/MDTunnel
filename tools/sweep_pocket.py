@@ -35,7 +35,7 @@ def main():
     for i,(kc,kr,ct,bb,sc,mg,sl,tl,it) in enumerate(combos, start=1):
         od = os.path.join(root, f"s{i:02d}_kc{kc}_kr{kr}_ct{ct}_bb{bb}_sc{sc}_mg{mg}_sl{sl}")
         cmd = [
-            'conda','run','-n','OpenMM','python','-m','cavermm.cli',
+            'conda','run','-n','OpenMM','python','-m','mdtunnel.cli',
             '--protein',PROTEIN,'--ligand',LIGAND,'--spheres',SPHERES,'--out',od,
             '--ambertools-prep','--ligand-charge','0','--ligand-resname','LIG',
             '--direction','exit',
@@ -60,4 +60,3 @@ def main():
 
 if __name__=='__main__':
     main()
-

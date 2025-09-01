@@ -126,27 +126,23 @@ def run_pipeline(
         if nsteps > 0:
             _run_safe_md(sim, nsteps)
     LocalEnergyMinimizer.minimize(
-        sim.context, options.min_tolerance_kj_per_nm * unit.kilojoule_per_mole / unit.nanometer, options.min_max_iter
-    )
+            sim.context, options.min_tolerance_kj_per_nm * unit.kilojoule_per_mole / unit.nanometer, options.min_max_iter
+        )
     step_times.append(time.time() - t0)
     _write_frame(sim, os.path.join(frames_dir, f"step_0000.pdb"))
     e0 = sim.context.getState(getEnergy=True).getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
     energies.append((0, *first_center, spheres[0].r * 0.1, e0))
-    ligand_pos_list_run.append(_get_ligand_positions(sim, build.ligand_atom_indices))
     com0 = _compute_ligand_com_nm(sim, build.ligand_atom_indices)
     com_dists_nm.append(float(np.linalg.norm(com0 - first_center)))
-    # Tighten COM if needed at initial step
     _tighten_com_if_needed(sim, build, first_center, options)
     com0 = _compute_ligand_com_nm(sim, build.ligand_atom_indices)
     com_dists_nm[-1] = float(np.linalg.norm(com0 - first_center))
+    ligand_pos_list_run.append(_get_ligand_positions(sim, build.ligand_atom_indices))
 
-    # Iterate over remaining spheres
     for i, sph in enumerate(spheres[1:], start=1):
         center = sph.center_nm()
-
-        # Optionally re-parameterize per-step (rebuild system preserving positions)
+        # If re-parameterizing per step, rebuild system with updated ligand FF
         if options.reparam_per_step:
-            # Extract current positions
             state = sim.context.getState(getPositions=True)
             positions = state.getPositions(asNumpy=True)
             # Rebuild system with same FF (charges/templates recomputed via generators)
@@ -418,6 +414,7 @@ def _write_ligand_trajectory(path: str, full_top: Topology, ligand_indices: List
             _write_model(f, idx, _to_quantity(m))
         f.write("END\n")
 
+
 def _compute_ligand_com_nm(sim: Simulation, ligand_indices: List[int]) -> np.ndarray:
     # Return ligand COM position in nm, mass-weighted if masses available
     state = sim.context.getState(getPositions=True)
@@ -560,6 +557,3 @@ def _tighten_com_if_needed(sim: Simulation, build, center_nm: np.ndarray, opts: 
         iters += 1
         if iters > 10:
             break
-
-
-## Vina rescoring function removed: we only keep FF energies
