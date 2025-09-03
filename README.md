@@ -1,119 +1,92 @@
 ## MDTunnel: Sphere-by-sphere ligand minimization in tunnels
 
-Sphere‑by‑sphere ligand minimization along protein tunnels using OpenMM. Provide a protein, a ligand, and a sequence of tunnel spheres (e.g., from CAVER3), and MDTunnel will generate minimized ligand poses and an energy profile. It can optionally dock the first pose with AutoDock Vina and supports an AmberTools‑based preparation path.
+MDTunnel generates minimized ligand poses along a protein tunnel, one sphere at a time, and an energy profile. It can dock the initial pose with AutoDock Vina, build a protein–ligand complex with AmberTools, and rescore the minimized frames with Vina. Bidirectional runs are merged per step and lightly smoothed to reduce isolated spikes.
 
-## Key Features
+## Highlights
 
-- Protein force field: Amber ff14SB (OpenMM XML) by default.
-- Ligand parameterization: GAFF2 + AM1‑BCC via OpenFF + openmmforcefields.
-- Optional AMOEBA path for protein/ligand (requires suitable templates/support).
-- Optional re‑parameterization per step to emulate polarization effects.
-- Center‑of‑mass restraint to keep the ligand near each sphere center.
-- Bidirectional run and per‑sphere energy‑based merge (default).
-- Optional post‑run Vina rescoring of poses (score‑only) and FF vs Vina comparison plot.
+- OpenMM-based minimization with restraints per sphere; default protein FF: Amber ff14SB.
+- Ligand parameters via OpenFF + openmmforcefields (GAFF2 + AM1‑BCC) or AmberTools path.
+- Optional initial docking (Vina) and per-frame Vina rescoring (default on).
+- Bidirectional enter/exit runs merged per step by lower FF energy; 3-point spike reduction for isolated outliers (>5 kcal/mol).
+- Robust MGLTools-only PDBQT prep (no Open Babel): absolute paths, cwd-safe execution.
+- Built-in protein PDB pre-cleaner: drops altLocs/duplicates; standardizes residue names (NSER→SER, MSE→MET with SE→SD), sets HIS tautomers per-residue from explicit Hs; runs before pdb4amber.
 
-## Installation
+## Environment (MDTunnel)
 
-Requires Python 3.9+.
+Create a dedicated env with conda-forge and bioconda:
+- conda create -n MDTunnel -c conda-forge -c bioconda \
+  python=3.12 openmm ambertools autodock-vina mgltools \
+  rdkit openff-toolkit openmmforcefields matplotlib pandas numpy
 
-Conda (recommended):
-
-```
-conda create -n OpenMM -c conda-forge python=3.11 openmm openmmforcefields openff-toolkit rdkit pandas numpy matplotlib
-conda activate OpenMM
-pip install -e .
-```
-
-Optional external tools:
-
-- AutoDock Vina (`vina`) for docking and rescoring. MGLTools is required for PDBQT preparation; set `MGLTOOLS_ROOT` or pass `--mgltools-root`.
-- AmberTools (`antechamber`, `parmchk2`, `tleap`, `pdb4amber`) for `--ambertools-prep`.
+MGLTools note: prepare_[ligand|receptor]4.py are legacy Python 2 scripts. Pass `--mgltools-root` pointing to a working MGLTools install with `pythonsh`. If you have a system MGLTools (e.g., `~/Programs/Autodock4/mgltools_x86_64Linux2_1.5.7`), prefer that. The provided run script auto-detects it; otherwise it falls back to the env prefix.
 
 ## Quickstart
 
-Basic minimization along spheres (GAFF2/AM1-BCC for ligand). By default, the first pose is docked with Vina and a bidirectional run+merge is performed:
+Reproducible script (recommended):
+- bash tools/run_full.sh [OUT_DIR]
+  - Defaults: `ENV=MDTunnel`, `PROTEIN=LinB_WT.pdb`, `LIGAND=DBE.sdf`, `SPHERES=CW_tunnel.dsd`, `OUT=runs/full_bidir_MDTunnel`.
+  - Optional: set `MGLTOOLS_ROOT` to point at your MGLTools root.
 
-```
-python -m mdtunnel.cli \
-  --protein protein.pdb \
-  --ligand ligand.sdf \
-  --spheres tunnel.csv \
-  --out outdir
-```
+Manual command:
+- conda run -n MDTunnel python -m mdtunnel.cli \
+  --protein LinB_WT.pdb \
+  --ligand DBE.sdf \
+  --spheres CW_tunnel.dsd \
+  --out runs/full_bidir_MDTunnel \
+  --bidirectional-merge \
+  --dock-first \
+  --ambertools-prep \
+  --ligand-charge-method gas \
+  --vina-rescore \
+  --vina-bin vina \
+  --mgltools-root "/home/$USER/Programs/Autodock4/mgltools_x86_64Linux2_1.5.7" \
+  --box-size 22 --exhaustiveness 8 --num-modes 1
 
-Disable docking and/or bidirectional merge explicitly:
-
-```
-python -m mdtunnel.cli \
-  --protein protein.pdb \
-  --ligand ligand.sdf \
-  --spheres tunnel.csv \
-  --out outdir \
-  --no-dock-first \
-  --single-direction
-```
-
-Bidirectional run with energy‑based merge (default):
-
-```
-python -m mdtunnel.cli \
-  --protein protein.pdb \
-  --ligand ligand.sdf \
-  --spheres tunnel.csv \
-  --out outdir \
-  --bidirectional-merge
-```
-
-Get CLI help: `python -m mdtunnel.cli --help`
+Get help: `python -m mdtunnel.cli --help`
 
 ## Inputs
 
-- Protein: PDB file of the receptor.
-- Ligand: SDF/MOL2/PDB of the small molecule; if not protonated, the tool will add hydrogens by default.
-- Spheres: tunnel path as CSV or PDB.
-  - CSV: columns `x,y,z,r` (header optional), coordinates in Å.
-  - PDB: spheres as `HETATM` with `resname SPH`; radius read from B‑factor if present (defaults to 1.5 Å).
+- Protein: PDB file. The tool pre-cleans and then runs pdb4amber (unless `--amber-protein-ready`).
+- Ligand: SDF/MOL2/PDB. For docking/prepare_ligand4, SDF is converted to MOL2 via AmberTools (`-c gas`), then used by MGLTools.
+- Spheres: CSV or PDB of tunnel spheres.
+  - CSV: columns `x,y,z,r` (Å). PDB: `HETATM`, `resname SPH`; radius from B‑factor if present.
 
 ## Outputs
 
-- `frames/step_XXXX.pdb`: ligand+protein frames per sphere.
-- `substrate_traj.pdb`: concatenated ligand models across steps (if merge mode, merged trajectory).
-- `energy_profile.csv`: per‑step energy in kJ/mol and kcal/mol; merged profile in bidirectional mode with ΔE relative to step 0.
-- `vina_profile.csv`: Vina score‑only affinity (kcal/mol) for each frame when `--vina-rescore` is used.
-- `energy_ff_vs_vina.png`: comparison plot with FF ΔE and Vina scores on two x‑axes (bottom: distance Å; top: step index).
-- `timings.json`: wall‑clock timings and number of spheres.
-- `docking/` and `amber_prep/`: created when using `--dock-first` and `--ambertools-prep`, respectively.
+- `frames/step_XXXX.pdb`: merged per-step frames (ligand+protein).
+- `substrate_traj.pdb`: ligand-only concatenated across steps.
+- `energy_profile.csv`: per-step FF energy; merged ΔE (kcal/mol) normalized to step 0; spike-reduced.
+- `vina_profile.csv`: Vina score-only affinity (kcal/mol), normalized to the first step.
+- `energy_ff_vs_vina.png`: dual-axis plot of FF ΔE (left, kcal/mol) vs distance (Å) and Vina (right, kcal/mol), both normalized to 0 at the docked pose.
+- `energy_profile.png`: FF-only plot of merged ΔE vs distance.
+- `timings.json`: timings summary.
+- `docking/` and `amber_prep/`: created when `--dock-first` and `--ambertools-prep` are used.
 
-## Typical Options
+## Common options
 
-- `--protein-ff`: OpenMM XML for protein (default `amber14/protein.ff14SB.xml`).
+- `--protein-ff`: OpenMM XML (default `amber14/protein.ff14SB.xml`).
 - `--ligand-param`: `gaff-am1bcc` (default) | `amoeba` | `qmmm`.
-- `--kcom`: COM restraint k (kJ/mol/nm²), default 2000.
-- `--kpos-protein`: protein position restraint k (kJ/mol/nm²).
-- `--platform`: CUDA | OpenCL | CPU (delegated to OpenMM).
-- `--reparam-per-step`: rebuild ligand params each step (GAFF path).
-- `--dock-first`: run Vina docking at the first sphere (requires Vina and MGLTools).
-- `--no-dock-first`: disable docking (overrides default `--dock-first`).
-- `--ambertools-prep`: build with AmberTools (requires external binaries).
-- `--bidirectional-merge` (default) | `--single-direction` to disable the merge.
-- `--vina-rescore`: after generating frames, rescore poses with Vina (score‑only) and plot FF vs Vina.
+- `--kcom`, `--kpos-protein`, `--kpos-backbone`, `--kpos-sidechain`: restraint strengths (kJ/mol/nm²).
+- `--platform`: CUDA | OpenCL | CPU.
+- `--reparam-per-step`: rebuild ligand params each step (slower).
+- `--dock-first` | `--no-dock-first`: enable/disable initial docking (default: enabled).
+- `--vina-rescore` | `--no-vina-rescore`: rescoring on by default.
+- `--ambertools-prep`: build complex with AmberTools (recommends `--ligand-charge-method gas`).
+- `--mgltools-root`: path to MGLTools root (with `pythonsh` + `MGLToolsPckgs/AutoDockTools/Utilities24`).
 
 ## Notes
 
-- If you already have a reasonable starting pose, you can skip docking. By default, the ligand COM is translated to the first sphere and minimized under a COM restraint that allows rotation.
-- AMOEBA often requires specific ligand templates; enable only if your environment supports it.
-- Re‑parameterization per step is optional and can be expensive.
+- No Open Babel: PDBQT prep uses MGLTools only; ligand bond orders supplied via AmberTools conversion to MOL2.
+- Protein PDB pre-cleaner: standardizes nonstandard names, resolves altLocs/duplicates, assigns histidine tautomers per residue from explicit Hs, and removes lone N‑terminal H (per chain). pdb4amber then refines for Amber.
+- Plots: PNGs are saved using a robust Agg backend; if a PNG save ever fails, the code will attempt an SVG and write a `plot_debug.txt` explaining the error.
 
 ## Development
 
 - CLI entry point: `mdtunnel.cli:main` (`python -m mdtunnel.cli`).
-- Core modules: `pipeline.py`, `system_builder.py`, `param.py`, `spheres.py`, `ligand_prep.py`.
-- Utility scripts in `tools/` help sweep parameters and refine outputs.
+- Core modules: `pipeline.py`, `system_builder.py`, `param.py`, `spheres.py`, `ligand_prep.py`, `docking.py`, `amber_prep.py`.
+- Reproducible run script: `tools/run_full.sh` (uses conda run; configurable via env vars).
 
-## License
+## License & Citation
 
-Please add a LICENSE file to clarify reuse. If you prefer, we can include a standard license (e.g., MIT/BSD-3-Clause/Apache-2.0).
-
-## Citation
-
-If you use this tool in academic work, please cite this repository and the underlying tools (OpenMM, OpenFF Toolkit, openmmforcefields, RDKit, AutoDock Vina, AmberTools).
+- Please include an appropriate LICENSE if you plan to distribute.
+- Cite this repository and underlying tools: OpenMM, OpenFF Toolkit, openmmforcefields, RDKit, AutoDock Vina, AmberTools, and MGLTools.
