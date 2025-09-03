@@ -88,5 +88,5 @@ Get help: `python -m mdtunnel.cli --help`
 
 ## License & Citation
 
-- Please include an appropriate LICENSE if you plan to distribute.
+- Licence: to do.
 - Cite this repository and underlying tools: OpenMM, OpenFF Toolkit, openmmforcefields, RDKit, AutoDock Vina, AmberTools, and MGLTools.
