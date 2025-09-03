@@ -52,7 +52,9 @@ def run_pipeline(
     frames_dir = os.path.join(outdir, "frames")
     os.makedirs(frames_dir, exist_ok=True)
 
-    # Build initial system
+    # Build initial system (measure preparation time)
+    import time, json
+    t_prep0 = time.time()
     build = build_system_with_restraints(
         protein_path=protein_path,
         ligand_path=ligand_path,
@@ -63,6 +65,7 @@ def run_pipeline(
         kpos_sidechain=options.kpos_sidechain,
         kcom=options.kcom,
     )
+    prepare_system_s = time.time() - t_prep0
 
     # Prepare Simulation
     platform = Platform.getPlatformByName(options.platform) if options.platform else None
@@ -205,9 +208,18 @@ def run_pipeline(
     df["E_kcal_mol"] = df["E_kJ_mol"] / 4.184
     df["dE_kcal_mol"] = df["dE_kJ_mol"] / 4.184
     df.to_csv(os.path.join(outdir, "energy_profile.csv"), index=False)
+    # Persist per-step minimization timings and overall pipeline timings
     pd.DataFrame({"step": list(range(len(step_times))), "min_time_s": step_times}).to_csv(
         os.path.join(outdir, "timings_minimization.csv"), index=False
     )
+    try:
+        with open(os.path.join(outdir, "timings_pipeline.json"), "w") as f:
+            json.dump({
+                "prepare_system_s": float(prepare_system_s),
+                "minimization_total_s": float(sum(step_times)),
+            }, f, indent=2)
+    except Exception:
+        pass
     _plot_energy_profile(outdir)
     _write_ligand_trajectory(os.path.join(outdir, "substrate_traj.pdb"), build.topology, build.ligand_atom_indices, ligand_pos_list_run)
     # Write COM distance to sphere centers
@@ -230,6 +242,9 @@ def run_pipeline_amber(
     frames_dir = os.path.join(outdir, "frames")
     os.makedirs(frames_dir, exist_ok=True)
 
+    # Build Amber system (measure preparation time)
+    import time, json
+    t_prep0 = time.time()
     build = build_system_from_amber_with_restraints(
         prmtop_path=prmtop_path,
         inpcrd_path=inpcrd_path,
@@ -237,6 +252,7 @@ def run_pipeline_amber(
         kpos_protein=options.kpos_protein,
         kcom=options.kcom,
     )
+    prepare_system_s = time.time() - t_prep0
 
     integrator = _make_integrator()
     platform = Platform.getPlatformByName(options.platform) if options.platform else None
@@ -336,6 +352,14 @@ def run_pipeline_amber(
     pd.DataFrame({"step": list(range(len(step_times))), "min_time_s": step_times}).to_csv(
         os.path.join(outdir, "timings_minimization.csv"), index=False
     )
+    try:
+        with open(os.path.join(outdir, "timings_pipeline.json"), "w") as f:
+            json.dump({
+                "prepare_system_s": float(prepare_system_s),
+                "minimization_total_s": float(sum(step_times)),
+            }, f, indent=2)
+    except Exception:
+        pass
     _plot_energy_profile(outdir)
     pd.DataFrame({
         "step": list(range(len(com_dists_nm))),
@@ -447,6 +471,9 @@ def _translate_ligand_to_center(sim: Simulation, ligand_indices: List[int], cent
 
 def _plot_energy_profile(outdir: str):
     try:
+        import os
+        # Avoid system libjpeg/libtiff conflicts during plotting
+        os.environ.pop("LD_LIBRARY_PATH", None)
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt

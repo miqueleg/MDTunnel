@@ -35,7 +35,7 @@ def build_system_with_restraints(
 ) -> SystemBuildResult:
     from openmm import CustomCentroidBondForce, CustomExternalForce, System
     from openmm import unit
-    from openmm.app import ForceField, Modeller, PDBFile, NoCutoff, NoConstraints
+    from openmm.app import ForceField, Modeller, PDBFile, NoCutoff
 
     # Load protein PDB
     pdb_prot = PDBFile(protein_path)
@@ -46,11 +46,16 @@ def build_system_with_restraints(
     # Merge topologies and positions
     modeller = Modeller(pdb_prot.topology, pdb_prot.positions)
     modeller.add(ligand_top, ligand_pos)
+    # Ensure standard protonation states/hydrogens for protein templates
+    try:
+        modeller.addHydrogens(forcefield)
+    except Exception:
+        pass
 
     system = forcefield.createSystem(
         modeller.topology,
         nonbondedMethod=NoCutoff,
-        constraints=NoConstraints,
+        constraints=None,
         removeCMMotion=False,
     )
 
@@ -140,26 +145,56 @@ def build_system_with_restraints(
 def _load_ligand_as_topology(ligand_path: str, ligand_mol=None):
     from openmm.app import PDBFile
     from openmm import unit
+    # If ligand_mol is provided, always use it to define the topology (robust chemistry)
+    if ligand_mol is not None:
+        top = ligand_mol.to_topology().to_openmm()
+        # Default positions from ligand_mol conformer
+        if ligand_mol.n_conformers:
+            coords = ligand_mol.conformers[0]
+            try:
+                pos_A = np.asarray(coords.value_in_unit(unit.angstrom), dtype=float)
+            except Exception:
+                try:
+                    pos_A = np.asarray(getattr(coords, "magnitude", coords), dtype=float)
+                except Exception:
+                    pos_A = np.asarray(coords, dtype=float)
+            positions = pos_A * 0.1 * unit.nanometer
+        else:
+            positions = np.zeros((top.getNumAtoms(), 3)) * unit.nanometer
+        # If a PDB with docked coordinates is given, attempt to override positions
+        try:
+            if ligand_path.lower().endswith(".pdb"):
+                pdb = PDBFile(ligand_path)
+                # If atom counts match, override positions with docked PDB coords
+                if pdb.topology.getNumAtoms() == top.getNumAtoms():
+                    positions = pdb.positions
+        except Exception:
+            pass
+        return top, positions
+
+    # Fallback: build from files
     try:
         if ligand_path.lower().endswith(".pdb"):
             pdb = PDBFile(ligand_path)
             return pdb.topology, pdb.positions
     except Exception:
         pass
-    # Use OpenFF to convert SDF/MOL2 to OpenMM Topology
-    if ligand_mol is None:
-        try:
-            from openff.toolkit.topology import Molecule
-            ligand_mol = Molecule.from_file(ligand_path, allow_undefined_stereo=True)
-        except Exception as e:  # pragma: no cover
-            raise RuntimeError("RDKit/OpenFF required to read non-PDB ligands") from e
+    try:
+        from openff.toolkit.topology import Molecule
+        ligand_mol = Molecule.from_file(ligand_path, allow_undefined_stereo=True)
+    except Exception as e:  # pragma: no cover
+        raise RuntimeError("RDKit/OpenFF required to read non-PDB ligands") from e
     top = ligand_mol.to_topology().to_openmm()
-    # Positions: use embedded conformer if present, else zeros
     if ligand_mol.n_conformers:
-        coords = ligand_mol.conformers[0]  # Quantity in angstrom
-        # convert to nm
-        pos = coords.value_in_unit(unit.angstrom) * 0.1
-        positions = np.asarray(pos, dtype=float) * unit.nanometer
+        coords = ligand_mol.conformers[0]
+        try:
+            pos_A = np.asarray(coords.value_in_unit(unit.angstrom), dtype=float)
+        except Exception:
+            try:
+                pos_A = np.asarray(getattr(coords, "magnitude", coords), dtype=float)
+            except Exception:
+                pos_A = np.asarray(coords, dtype=float)
+        positions = pos_A * 0.1 * unit.nanometer
     else:
         positions = np.zeros((top.getNumAtoms(), 3)) * unit.nanometer
     return top, positions
